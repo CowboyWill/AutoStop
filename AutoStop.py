@@ -1,15 +1,18 @@
 #!/usr/bin/env python
 
 #-------------------------------------------------------------------------------
-# Title:        AutoStopTk
-# Purpose:
+# Title:        AutoStop
+# Purpose:      AutoStop is for a custom made automatic Miter Saw cut length system
 # Author:       Will Travis
-# Version:      0.1
-# Modified:     09/24/2016
-# Copyright:    (c) William Travis 2016
+# Version:      0.1.2
+# Modified:     01/14/2017
+# Copyright:    (c) William Travis 2017
 # License:      Simplified BSD 2-Clause License
-# Description:
-#
+# Description:  AutoStop is the GUI interface for the automated Miter Saw cutting system
+#               It allows you to enter a dimension and it will move a stepper motor
+#               to the correct distance to allow perfect cutting over and over.
+#               It can be set up for Millimeter or American Inches
+#               It has multiple configuration options
 # History:
 #
 #
@@ -19,11 +22,11 @@
 #               First letter Uppercase = global variable
 #               First letter Lowercase = local variable
 #-------------------------------------------------------------------------------
-__author__ = "Will Travis"
+__author__ = "William Travis"
 __license__ = "Simplified BSD 2-Clause License"
 
 # For testing purposes, replace this line with motor controls
-motorMovedThisFar = 0.06   # DEBUG  (0.0625 = 1/16)
+motorMovedThisFar = 1.0/64.0   # DEBUG
 
 import os
 import platform
@@ -31,11 +34,9 @@ from functools import partial
 from fractions import Fraction
 from ConfigParser import RawConfigParser
 try:
-    # Python2
-    from Tkinter import *
+    from Tkinter import *    # Python2
 except ImportError:
-    # Python3
-    from tkinter import  *
+    from tkinter import  *   # Python3
 
 import tkMessageBox as mBox
 import tkFont
@@ -43,11 +44,11 @@ import tkFont
 # ----------------------------------------------------------------------------
 def numFormat(num):
     """
-    Converts float to string formatted properly for display
-    ARGS: decimal number  i.e. 123.25
-    RETURNS:
-        MM mode: string number formatted (8 characters, decimal point, 2 decimals) i.e. "   123.45"
-        IN mode: string number formatted (8 characters, with 3 spaces) i.e. "   123   "
+    DESC:    Converts float to string formatted for display
+    ARGS:    Decimal number  i.e. 123.25
+    RETURNS: String number formatted as follows
+        MM mode: 8 characters, decimal point, 2 decimals, i.e. "   123.45"
+        IN mode: 8 characters, with 3 spaces for fraction, i.e. "   123   "
     """
     if UNITS == "MM":
         return '{:>10.2f}'.format(float(num))
@@ -57,7 +58,10 @@ def numFormat(num):
 # ----------------------------------------------------------------------------
 def resizeIcon(image, w, h):
     """
-    Resize an icon to new size
+    DESC:    Resize an icon to new size.  Used to resize icons for different screen
+              sizes
+    ARGS:    Location of image file, new Width and Height
+    RETURNS: resized image object
     """
     img = PhotoImage(file=image)
     scale_w = int(img.width()/w)
@@ -67,8 +71,10 @@ def resizeIcon(image, w, h):
 # ----------------------------------------------------------------------------
 def setPrecision(value):
     """
-    In INch mode sets numerator and denominator to PRECISION
-    ARGS: decimal number  i.e. 123.25
+    DESC:    In INch mode sets numerator and denominator rounded to PRECISION value
+              PRECISION is set in the config file, precision is usually
+              1/8, 1/16, 1/32 or 1/64
+    ARGS:    Decimal number  i.e. 123.25
     RETURNS: numerator and denominator  i.e.  1,4
     """
     # Set numerator and denominator for IN mode
@@ -76,27 +82,28 @@ def setPrecision(value):
     if decimal == 0.0:
         return 0, PRECISION
     else:
-        decimal = round(decimal*PRECISION,0)/PRECISION # change decimal to precision value
+        decimal = round(decimal*PRECISION,0)/PRECISION # round decimal to precision value
         fract = Fraction(decimal)  # Fraction creates a fraction from a decimal
         return fract.numerator, fract.denominator
 
 # ----------------------------------------------------------------------------
 def setTarget(value):
     """
-    Sets the TargetVal and TargetValStr to value
-    If INch mode sets numerator and denominator to PRECISION
-    ARGS: decimal number  i.e. 123.25
-    RETURNS: nothing, but sets global variables:
-         TargetVal, TargetValStr, TargetNumeratorStr, TargetDenominatorStr
+    DESC:    Sets the global variable TargetVal and TargetValStr to value
+              If INch mode rounds numerator and denominator to PRECISION value
+              Includes error checking of value range, i.e. <0, >Park Locaion
+    ARGS:    Decimal number  i.e. 123.25
+    RETURNS: Sets global variables:
+              TargetVal, TargetValStr, TargetNumeratorStr, TargetDenominatorStr
     """
 
     global TargetVal, TargetValStr
 
     #Check for value limits
     if value <= 0.0:
-        value = 0.0     # Check if value is < 0, if so, set to 0
+        value = 0.0     # If value is < 0, set to 0
     if value >= PARKLOCATION:
-        value = PARKLOCATION # check if value > parklocation, if so set to parklocation
+        value = PARKLOCATION # If value > parklocation, set to parklocation
     if value == TargetVal:
         return         # if value = existing Target do nothing
 
@@ -105,9 +112,8 @@ def setTarget(value):
     TargetValStr.set(numFormat(TargetVal))
 
     if UNITS == "IN":
+        # Set numerator and denominator for INch mode
         global TargetNumeratorStr, TargetDenominatorStr
-
-        # Set numerator and denominator for IN mode
         n,d = setPrecision(TargetVal)
         TargetNumeratorStr.set(n)
         TargetDenominatorStr.set(d)
@@ -115,11 +121,11 @@ def setTarget(value):
 # ----------------------------------------------------------------------------
 def setActual(value):
     """
-    Sets the actualVal to value
-    If IN mode sets numerator and sets denominator to PRECISION
-    ARGS: decimal number  i.e. 123.25
-    RETURNS: nothing, but sets global variables:
-        ActualVal, ActualValStr, ActualNumeratorStr, ActualDenominatorStr
+    DESC:    Sets the global variable ActualVal and ActualValStr to value
+              If INch mode rounds numerator and denominator to PRECISION value
+    ARGS:    Decimal number  i.e. 123.25
+    RETURNS: Sets global variables:
+              ActualVal, ActualValStr, ActualNumeratorStr, ActualDenominatorStr
     """
     global ActualVal, ActualValStr
 
@@ -127,9 +133,8 @@ def setActual(value):
     ActualValStr.set(numFormat(value))
 
     if UNITS == "IN":
-        global ActualNumeratorStr, ActualDenominatorStr
-
         # Set numerator and denominator for IN mode
+        global ActualNumeratorStr, ActualDenominatorStr
         n,d = setPrecision(ActualVal)
         ActualNumeratorStr.set(n)
         ActualDenominatorStr.set(d)
@@ -137,9 +142,9 @@ def setActual(value):
 # ----------------------------------------------------------------------------
 def formatJogValue(value):
     """
-    Formats the Jog value in fraction only used in INch mode
-    Sets numerator and sets denominator to PRECISION
-    ARGS: decimal number  i.e. 123.25
+    DESC:    In INch mode, formats the Jog value to a fraction
+              Returns as formatted 9 character string
+    ARGS:    decimal number  i.e. 123.25
     RETURNS: INch mode - text formatted to 9 chararcters in fraction notation
              MM mode  - text formatted to 9 characters
     """
@@ -154,14 +159,6 @@ def formatJogValue(value):
     return '{:>9}'.format(value)
 
 # ################### READ SETTINGS FROM AutoStop.cfg SETTINGS FILE ###########################
-# def readConfigFile():
-"""
-See .cfg file for settings information
-ARGS: none
-RETURNS: nothing, sets global variables
-"""
-# global DIRECTORY, SCREEN_WIDTH, SCREEN_HEIGHT, THEME, TEXTCOLOR, UNITS
-# global PRECISION, JOGVALUES, CurrentJogValue, PARKLOCATION, CONTROLLER
 
 # DIRECTORY THIS APPLICATION IS LOCATED IN
 DIRECTORY = os.path.dirname(os.path.realpath(__file__))
@@ -172,25 +169,29 @@ cfg.readfp(open( os.path.join(DIRECTORY, 'AutoStop.cfg'),"r"))
 
 SCREEN_WIDTH = cfg.getint('Display', 'ScreenWidth')
 SCREEN_HEIGHT =cfg.getint('Display', 'ScreenHeight')
-# #### root.minsize(width=200, height=200)
-# #### root.maxsize(width=SCREEN_WIDTH, height=screen_heigt)
+# #### Root.minsize(width=200, height=200)
+# #### Root.maxsize(width=SCREEN_WIDTH, height=screen_heigt)
 
-# Retrieve Theme
+# Retrieve Color Theme
 THEME = cfg.get('Display', 'Theme').lower()
-# set color based on theme setting, default = black
+# set color based on theme setting, default = blue background
 if THEME == 'white':
     TEXTCOLOR = "black"
-elif THEME == 'blue':
+elif THEME == 'black':
+    TEXTCOLOR = "white"
+else:
     THEME = "deep sky blue"
     TEXTCOLOR = "black"
-else:
-    THEME = 'black'
-    TEXTCOLOR = "white"
 
 # Reteieve setting for measurement units
 UNITS = cfg.get('Settings', 'Units')
-PRECISION = cfg.getint('Settings', 'Precision')
-while PRECISION not in [4, 8, 16, 32, 64]:
+
+# Retrieve setting for fraction rounding, used only in INch mode
+try:
+    PRECISION = cfg.getint('Settings', 'Precision')
+    while PRECISION not in [4, 8, 16, 32, 64]:
+        PRECISION = 16
+except:
     PRECISION = 16
 
 # Retrieve custom jog values
@@ -211,9 +212,13 @@ if cfg.has_option(UNITS, 'JogValue3'):
         if j%.0625 != 0.0: j=0.0625  # if Jog value not divisible by 16, reset to 1/16
     JOGVALUES[2] = j
 
-CurrentJogValue = cfg.getint('Settings', 'StartJogValue')-1
+# Retrieve starting jog value (which jog button to light up)
+try:
+    CurrentJogValue = cfg.getint('Settings', 'StartJogValue')-1
+except:
+    CurrentJogValue = 0
 
-# Retrieve farthest location to park stop
+# Retrieve farthest location to park head at
 PARKLOCATION = float(cfg.get(UNITS, 'Park'))
 
 # Type of Stepper Motor Controller
@@ -227,24 +232,24 @@ DELAY_MS = cfg.getint('Setup', 'DelayMS')
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # INITIALIZE SYSTEMS
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-root = Tk()
-root.title("AutoStop")
-# SCREEN_WIDTH = root.winfo_screenwidth()
-# SCREEN_HEIGHT = root.winfo_screenheight()
-# use width x height + x_offset + y_offset (no spaces!)
-root.geometry(str(SCREEN_WIDTH)+"x"+str(SCREEN_HEIGHT))
-root.configure(background=THEME)   # set background color
+Root = Tk()
+Root.title("AutoStop")
+# SCREEN_WIDTH = Root.winfo_screenwidth()
+# SCREEN_HEIGHT = Root.winfo_screenheight()
+Root.geometry(str(SCREEN_WIDTH)+"x"+str(SCREEN_HEIGHT))
+Root.configure(background=THEME)   # set background color
 
-# This next section creates two variables that will be used for screen dimentions
-#   RowWidth and ColHeight will be used to resize the text and icons to fit multiple screen sizes
-#   this will allow a responsive screen interface
+# Global variables (starts with capital letter)
+
+# This next section creates two variables that will be used for screen dimensions
+#   RowWidth and ColHeight will be used to resize the text and icons to fit multiple
+#    screen sizes, this will allow a responsive screen interface
 Rows = 8     # Number of rows in interface
 Columns = 6  # Number of columns in interface
 RowWidth = int(SCREEN_WIDTH*(1.0/Rows))
 ColHeight = int(SCREEN_HEIGHT*(1.0/Columns))
 
-# Global variables (starts with capital letter)
-# Variables to store Actual head stop values
+# Variables to store Actual head location values
 ActualVal = 0.0
 ActualValStr = StringVar()
 ActualValStr.set(numFormat(ActualVal))
@@ -255,7 +260,7 @@ ActualNumeratorStr.set(n)
 ActualDenominatorStr = StringVar()
 ActualDenominatorStr.set(d)
 
-# Variables to store Target head stop location
+# Variables to store Target head location values
 TargetVal = 1/PRECISION
 TargetValStr = StringVar()
 TargetValStr.set(numFormat(TargetVal))
@@ -266,7 +271,7 @@ TargetNumeratorStr.set(n)
 TargetDenominatorStr = StringVar()
 TargetDenominatorStr.set(d)
 
-decimalMode = 0  # 0 means not entering decimal numbers, 1 or 2 is number of decimals entered
+DecimalMode = 0  # 0 means entering whole numbers, 1 or 2 is number of decimals entered
 Moving = "no"  # is head moving?  values = 'no', 'lft', 'rgt'
 Buttons = []  # contains buttons in keypad
 
@@ -275,7 +280,7 @@ JogBtn = ['', '', '']         # Button objects
 JogImg = ['', '', '']         # Images of normal button
 JogPressedImg = ['', '', '']  # Images of pressed button
 
-# Images
+# Create image objects and resize Images to screen size
 CloseImg=resizeIcon("images\\close.gif", RowWidth/2, ColHeight/2)
 SettingsImg=resizeIcon("images\\setting.gif", RowWidth, ColHeight)
 HomeImg=resizeIcon("images\\home.gif", RowWidth, ColHeight)
@@ -292,9 +297,11 @@ RightImg=resizeIcon("images\\right.gif", RowWidth, ColHeight)
 KeypadImg=resizeIcon("images\\keypad.gif", RowWidth/2, ColHeight/2)
 ActualImg=resizeIcon("images\\actual.gif", RowWidth, ColHeight/2)
 TargetImg=resizeIcon("images\\target.gif", RowWidth, ColHeight/2)
+
+# playing with this using an Image vs. Text
 TitleImg=resizeIcon("images\\autostop.gif", RowWidth*2, ColHeight/2)
 
-# Mono spaced font
+# Multiplier is used to resize font for screen size, with smallest screen size = 480w
 multiplier = SCREEN_HEIGHT / 480.0
 # Jog button text
 FontFixedJog = tkFont.Font(family="Courier", size=int(26*multiplier), weight='bold')
@@ -311,11 +318,13 @@ FontTitle=tkFont.Font(family="Helvetica", size=int(40*multiplier), weight="bold"
 
 # set up stepper motor controller
 if (platform.system() == 'Linux'):
-    import Stepper_Pi_AdaFruit as StepDriver
+    ### import Stepper_Pi_AdaFruit as StepDriver
+    pass
 elif (platform.system() == 'Windows'):
-    import Stepper_Win as StepDriver
+    ### import Stepper_Win as StepDriver
+    pass
 # Initialize Stepper Driver
-Step = StepDriver.StepperMotor()
+### Step = StepDriver.StepperMotor()
 
 # ----------------------------------------------------------------------------
 def MoveMotor(dir='no'):
@@ -357,7 +366,7 @@ def MoveMotor(dir='no'):
         else:
             Moving = "no"
 
-    root.after(DELAY_MS, MoveMotor)
+    Root.after(DELAY_MS, MoveMotor)
     return
 
 # ==============================================================================
@@ -377,8 +386,8 @@ class AutoStopApp(object):
         """
         global Jog1Btn, Jog2Btn, Jog3Btn
 
-        self.root = parent
-        self.root.title("AutoStop")
+        self.Root = parent
+        self.Root.title("AutoStop")
         self.frame = Frame(parent)
         self.frame.configure(background=THEME) # set background color
         self.frame.grid()
@@ -393,7 +402,7 @@ class AutoStopApp(object):
         # titleTextLbl = Label(self.frame, text="AutoStop", font=FontTitle, bg=THEME, fg=TEXTCOLOR)
         titleTextLbl.grid(   row=0, column=2, columnspan=3, sticky=N)
 
-        closeBtn = Button(self.frame, image=CloseImg, relief=FLAT, command=root.destroy, bg=THEME, activebackground=THEME, borderwidth=0)
+        closeBtn = Button(self.frame, image=CloseImg, relief=FLAT, command=Root.destroy, bg=THEME, activebackground=THEME, borderwidth=0)
         closeBtn.grid(       row=0, column=5, sticky=E)
 
         actualTextLbl = Label(self.frame, image=ActualImg, bg=THEME)
@@ -463,8 +472,8 @@ class AutoStopApp(object):
         rightBtn = Button(self.frame, image=RightImg, command=self.moveRight, relief=FLAT, bg=THEME, activebackground=THEME, borderwidth=0)
         rightBtn.grid(       row=7, column=5, rowspan=2, sticky=SE)
 
-        root.after(5, MoveMotor)
-        root.mainloop()
+        Root.after(5, MoveMotor)
+        Root.mainloop()
 
     # ----------------------------------------------------------------------------
     def jogButtonPressed(self, jogButton):
@@ -492,13 +501,13 @@ class AutoStopApp(object):
     #----------------------------------------------------------------------
     def hide(self):
         """"""
-        self.root.withdraw()
+        self.Root.withdraw()
 
     #----------------------------------------------------------------------
     def show(self):
         """"""
-        self.root.update()
-        self.root.deiconify()
+        self.Root.update()
+        self.Root.deiconify()
 
     #----------------------------------------------------------------------
     def openKeypad(self):
@@ -679,7 +688,7 @@ class KeypadFrame(Toplevel):
         # Add one number at a time to target value
         # up to two decimal points (hundreds)
         # up to the max MM allowed
-        global decimalMode
+        global DecimalMode
 
         self.newTargetVal = TargetVal
         self.newNum = newNum.strip()  # strip off whitespace from key value
@@ -688,8 +697,8 @@ class KeypadFrame(Toplevel):
             # check if already in decimal entry mode.
             #     If not: change to decimal entry mode
             #     If so: do nothing
-            if decimalMode == 0:
-                decimalMode = 1   # next character is first decimal number
+            if DecimalMode == 0:
+                DecimalMode = 1   # next character is first decimal number
                 # change color of decimal point to show that you pressed it.
                 self.btns[11].configure(bg=self.fgKeyColor, fg=self.bgKeyColor)
 
@@ -703,40 +712,40 @@ class KeypadFrame(Toplevel):
 
         # Check if button pressed is C for clear all numbers.
         elif self.newNum == 'C':
-            decimalMode = 0
+            DecimalMode = 0
             self.newTargetVal = 0.0
             # restore color of decimal point back to normal
             self.btns[11].configure(bg=self.bgKeyColor, fg=self.fgKeyColor)
 
         # Check if character entered is Backspace, delete last character entered
         elif self.newNum == 'Bksp':
-            if decimalMode == 0:
+            if DecimalMode == 0:
                 self.newTargetVal = int(float(self.newTargetVal) / 10)
-            if decimalMode == 1:
+            if DecimalMode == 1:
                 self.newTargetVal = int(float(self.newTargetVal) / 10)
-                decimalMode = 0
+                DecimalMode = 0
                 # restore color of decimal point back to normal
                 self.btns[self.decimalKey].configure(bg=self.bgKeyColor, fg=self.fgKeyColor)
-            elif decimalMode == 2:
+            elif DecimalMode == 2:
                 self.newTargetVal = int(self.newTargetVal)
-                decimalMode = 1
-            elif decimalMode == 3:
+                DecimalMode = 1
+            elif DecimalMode == 3:
                 self.newTargetVal = int(self.newTargetVal*10)
                 self.newTargetVal = self.newTargetVal/10.0
-                decimalMode = 2
+                DecimalMode = 2
 
         else:
             # numbers 0-9
             self.newNum = int(self.newNum)  # convert to integer
             # intTargetVal = int(float(TargetVal))  # convert to integer
-            if decimalMode == 0:
+            if DecimalMode == 0:
                 self.newTargetVal = (int(float(self.newTargetVal)) * 10) + self.newNum
-            elif decimalMode == 1:
+            elif DecimalMode == 1:
                 self.newTargetVal = float(self.newTargetVal) + (self.newNum * .1)
-                decimalMode = 2   # next character is second decimal number
-            elif decimalMode == 2:
+                DecimalMode = 2   # next character is second decimal number
+            elif DecimalMode == 2:
                 self.newTargetVal = float(self.newTargetVal) + (self.newNum * .01)
-                decimalMode = 3   # no more digits
+                DecimalMode = 3   # no more digits
             else:
                 mBox.showerror('Limit Exceeded', 'Only two decimals allowed')
                 self.deiconify()  # Bring keypad back to focus
@@ -770,11 +779,11 @@ class KeypadFrame(Toplevel):
         Key pressed, add value to screen, includes fractions
         ARGS: new number to add
         RETURNS: Nothing,
-            decimalMode global set to 0 for whole numbers, 4 for x/4, 8 for x/8, 16 for x/16
+            DecimalMode global set to 0 for whole numbers, 4 for x/4, 8 for x/8, 16 for x/16
         """
         # Add one number at a time to target value
         # up to the max Inch allowed
-        global decimalMode
+        global DecimalMode
 
         self.newTargetVal = TargetVal
         self.newNum = newNum.strip()   # strip off all whitespace
@@ -789,7 +798,7 @@ class KeypadFrame(Toplevel):
                 self.btns[self.a].configure(text=self.newKeyLabels[self.a])
             for self.a in range(len(self.newKeyLabels),self.btnNumber):
                  self.btns[self.a].grid_remove()
-            decimalMode = 4
+            DecimalMode = 4
             self.keypad = 'x/4'
             self.title(self.keypad)
 
@@ -800,7 +809,7 @@ class KeypadFrame(Toplevel):
                 self.btns[self.a].configure(text=self.newKeyLabels[self.a])
             for self.a in range(len(self.newKeyLabels),self.btnNumber):
                  self.btns[self.a].grid_remove()
-            decimalMode = 8
+            DecimalMode = 8
             self.keypad = 'x/8'
             self.title(self.keypad)
 
@@ -811,7 +820,7 @@ class KeypadFrame(Toplevel):
                 self.btns[self.a].configure(text=self.newKeyLabels[self.a])
             for self.a in range(len(self.newKeyLabels),self.btnNumber):
                  self.btns[self.a].grid_remove()
-            decimalMode = 16
+            DecimalMode = 16
             self.keypad = 'x/16'
             self.title(self.keypad)
 
@@ -822,7 +831,7 @@ class KeypadFrame(Toplevel):
                 self.btns[self.a].configure(text=self.newKeyLabels[self.a])
             for self.a in range(len(self.newKeyLabels),self.btnNumber):
                  self.btns[self.a].grid_remove()
-            decimalMode = 32
+            DecimalMode = 32
             self.keypad = 'x/32'
             self.title(self.keypad)
 
@@ -833,7 +842,7 @@ class KeypadFrame(Toplevel):
                 self.btns[self.a].configure(text=self.newKeyLabels[self.a])
             for self.a in range(len(self.newKeyLabels),self.btnNumber):
                  self.btns[self.a].grid_remove()
-            decimalMode = 64
+            DecimalMode = 64
             self.keypad = 'x/64'
             self.title(self.keypad)
 
@@ -844,7 +853,7 @@ class KeypadFrame(Toplevel):
                 self.btns[self.a].configure(text=self.newKeyLabels[self.a])
             for self.a in range(len(self.newKeyLabels),self.btnNumber):
                  self.btns[self.a].grid_remove()
-            decimalMode = 64
+            DecimalMode = 64
             self.keypad = 'x/64'
             self.title(self.keypad)
 
@@ -859,23 +868,23 @@ class KeypadFrame(Toplevel):
         # Check if button pressed is C for clear all numbers.
         elif self.newNum == 'C':
             self.newTargetVal = 0.0
-            decimalMode = 0 # reset decimal mode to whole number
+            DecimalMode = 0 # reset decimal mode to whole number
             self.redrawButtons()
 
         # Check if character entered is Backspace, delete last character entered
         elif self.newNum == 'Bksp':
-            if decimalMode == 0:
+            if DecimalMode == 0:
                 self.newTargetVal = int(float(self.newTargetVal) / 10)
             else:  # in fraction mode
                 self.newTargetVal = int(self.newTargetVal)
-                decimalMode = 0 # reset decimal mode to whole number
+                DecimalMode = 0 # reset decimal mode to whole number
                 # self.redrawButtons()
 
         else:
             # numbers 0-9
             self.newNum = int(self.newNum)  # convert to integer
             # intTargetVal = int(float(TargetVal))  # convert to integer
-            if decimalMode == 0:
+            if DecimalMode == 0:
                 # move number (whole) to left and add newNum to right side of number
                 self.newTargetVal = (self.newTargetVal*10) + self.newNum
 
@@ -887,19 +896,19 @@ class KeypadFrame(Toplevel):
                 self.decTargetVal = TargetVal - intTargetVal  # only the decimal
                 self.newTargetVal = self.newTargetVal + self.decTargetVal # new whole number + decimal
                 """
-            elif decimalMode == 4:  # x/4th mode
+            elif DecimalMode == 4:  # x/4th mode
                 self.newTargetVal = int(self.newTargetVal) + self.newNum/4.0
                 self.redrawButtons()
-            elif decimalMode == 8:  # x/8th mode
+            elif DecimalMode == 8:  # x/8th mode
                 self.newTargetVal = int(self.newTargetVal) + self.newNum/8.0
                 self.redrawButtons()
-            elif decimalMode == 16:  # x/16th mode
+            elif DecimalMode == 16:  # x/16th mode
                 self.newTargetVal = int(self.newTargetVal) + self.newNum/16.0
                 self.redrawButtons()
-            elif decimalMode == 32:  # x/32th mode
+            elif DecimalMode == 32:  # x/32th mode
                 self.newTargetVal = int(self.newTargetVal) + self.newNum/32.0
                 self.redrawButtons()
-            elif decimalMode == 64:  # x/64th mode
+            elif DecimalMode == 64:  # x/64th mode
                 self.newTargetVal = int(self.newTargetVal) + self.newNum/64.0
                 self.redrawButtons()
             else:
@@ -964,5 +973,5 @@ def shutdown(todo = 'Quit'):
 
 # ============================================================================
 if __name__ == '__main__':
-    app = AutoStopApp(root)
-    root.mainloop()
+    app = AutoStopApp(Root)
+    Root.mainloop()
