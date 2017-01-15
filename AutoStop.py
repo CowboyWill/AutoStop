@@ -4,7 +4,7 @@
 # Title:        AutoStop
 # Purpose:      AutoStop is for a custom made automatic Miter Saw cut length system
 # Author:       Will Travis
-# Version:      0.1.2
+# Version:      0.2
 # Modified:     01/14/2017
 # Copyright:    (c) William Travis 2017
 # License:      Simplified BSD 2-Clause License
@@ -24,9 +24,6 @@
 #-------------------------------------------------------------------------------
 __author__ = "William Travis"
 __license__ = "Simplified BSD 2-Clause License"
-
-# For testing purposes, replace this line with motor controls
-motorMovedThisFar = 1.0/64.0   # DEBUG
 
 import os
 import platform
@@ -158,22 +155,64 @@ def formatJogValue(value):
 
     return '{:>9}'.format(value)
 
-# ################### READ SETTINGS FROM AutoStop.cfg SETTINGS FILE ###########################
+# ################### READ SETTINGS FROM AutoStop.ini SETTINGS FILE ###########################
+class config_file(object):
+    """
+    DESC:   Read and Write config files
+    """
+
+    def __init__(self, ini_filename):
+        self.ini_filename = ini_filename
+        self.cfg = RawConfigParser()
+        self.cfg.readfp( open( self.ini_filename,"r" ) )
+
+    def get_string(self, section, key):
+        if self.cfg.has_option(section, key):
+            return self.cfg.get(section, key)
+        else:
+            return None
+
+    def get_int(self, section, key):
+        if self.cfg.has_option(section, key):
+            return self.cfg.getint(section, key)
+        else:
+            return None
+
+    def get_float(self, section, key):
+        if self.cfg.has_option(section, key):
+            return self.cfg.getfloat(section, key)
+        else:
+            return None
+
+    def set_float(self, section, key, new_value):
+        self.cfg.set(section, key, new_value)
+
+    def write_settings(self):
+        with open( self.ini_filename, "w") as ini_out:
+            self.cfg.write( ini_out )
+            ini_out.close()
+
 
 # DIRECTORY THIS APPLICATION IS LOCATED IN
 DIRECTORY = os.path.dirname(os.path.realpath(__file__))
 os.chdir(DIRECTORY)
 
-cfg = RawConfigParser()
-cfg.readfp(open( os.path.join(DIRECTORY, 'AutoStop.cfg'),"r"))
+CfgFilename = os.path.basename(__file__)
+CfgFilename = os.path.splitext(CfgFilename)[0]+'.ini'
+if os.path.exists(CfgFilename) == False:
+        # Need to write some better exit code !!!!!!!!!!!!!!!!!!!!!!!!!!!
+        print "file does not exist"
+        exit()
 
-SCREEN_WIDTH = cfg.getint('Display', 'ScreenWidth')
-SCREEN_HEIGHT =cfg.getint('Display', 'ScreenHeight')
+cfg = config_file(os.path.join(DIRECTORY, CfgFilename))
+
+SCREEN_WIDTH = cfg.get_int('Display', 'ScreenWidth')
+SCREEN_HEIGHT =cfg.get_int('Display', 'ScreenHeight')
 # #### Root.minsize(width=200, height=200)
 # #### Root.maxsize(width=SCREEN_WIDTH, height=screen_heigt)
 
 # Retrieve Color Theme
-THEME = cfg.get('Display', 'Theme').lower()
+THEME = cfg.get_string('Display', 'Theme').lower()
 # set color based on theme setting, default = blue background
 if THEME == 'white':
     TEXTCOLOR = "black"
@@ -184,50 +223,51 @@ else:
     TEXTCOLOR = "black"
 
 # Reteieve setting for measurement units
-UNITS = cfg.get('Settings', 'Units')
+UNITS = cfg.get_string('Settings', 'Units')
 
 # Retrieve setting for fraction rounding, used only in INch mode
 try:
-    PRECISION = cfg.getint('Settings', 'Precision')
+    PRECISION = cfg.get_int('Settings', 'Precision')
     while PRECISION not in [4, 8, 16, 32, 64]:
         PRECISION = 16
 except:
     PRECISION = 16
 
 # Retrieve custom jog values
-JOGVALUES = [1.0, 1.0, 1.0]
-if cfg.has_option(UNITS, 'JogValue1'):
-    j = float(cfg.get(UNITS, 'JogValue1'))
+JOGVALUES = []
+for a in ['1','2','3']:
+    j = cfg.get_float(UNITS, 'JogValue'+a)
+    if j == None: j = 1.0   # default value if JogValue1 does not exist in config file
     if UNITS == 'IN':
         if j%.0625 != 0.0: j=0.0625  # if Jog value not divisible by 16, reset to 1/16
-    JOGVALUES[0] = j
-if cfg.has_option(UNITS, 'JogValue2'):
-    j = float(cfg.get(UNITS, 'JogValue2'))
-    if UNITS == 'IN':
-        if j%.0625 != 0.0: j=0.0625  # if Jog value not divisible by 16, reset to 1/16
-    JOGVALUES[1] = j
-if cfg.has_option(UNITS, 'JogValue3'):
-    j = float(cfg.get(UNITS, 'JogValue3'))
-    if UNITS == 'IN':
-        if j%.0625 != 0.0: j=0.0625  # if Jog value not divisible by 16, reset to 1/16
-    JOGVALUES[2] = j
+    JOGVALUES.append(j)
 
 # Retrieve starting jog value (which jog button to light up)
 try:
-    CurrentJogValue = cfg.getint('Settings', 'StartJogValue')-1
+    CurrentJogValue = cfg.get_int('Settings', 'StartJogValue')-1
 except:
     CurrentJogValue = 0
 
 # Retrieve farthest location to park head at
-PARKLOCATION = float(cfg.get(UNITS, 'Park'))
+PARKLOCATION = cfg.get_float(UNITS, 'Park')
 
 # Type of Stepper Motor Controller
-CONTROLLER = cfg.get('Setup', 'Controller')
+CONTROLLER = cfg.get_string('Setup', 'Controller')
 
 # Delay in updating readings and display
-DELAY_MS = cfg.getint('Setup', 'DelayMS')
+DELAY_MS = cfg.get_int('Setup', 'DelayMS')
 
-# ###########END READING SETTINGS FROM AutoStop.cfg SETTING FILES ##############
+# ###########END READING SETTINGS FROM AutoStop.ini SETTING FILE ##############
+
+# ############## READ MACHINE SETTINGS FROM MachineSetting.ini SETTING FILE #################
+machineCfg = config_file(os.path.join(DIRECTORY, 'MachineSettings.ini'))
+# Retrieve amount of space the motor moved with each step (in Inches or MM)
+# Note this must be calculated initially, next version will allow calibration
+MOTORMOVEDEACHSTEP = machineCfg.get_float('Machine Settings', 'distance traveled per step')
+# For testing purposes
+MOTORMOVEDEACHSTEP = 1.0/64.0   # DEBUG
+
+# ###########END READING MACHINE SETTINGS FROM MachineSetting.ini SETTING FILE ##############
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # INITIALIZE SYSTEMS
@@ -329,15 +369,15 @@ elif (platform.system() == 'Windows'):
 # ----------------------------------------------------------------------------
 def MoveMotor(dir='no'):
     """
-    Move Stepper Motor, called by a timer to continiously move motor.
-    ARGS: dir = 'no' or blank - do not move motor
-                'lft' - move motor left
-                'rgt' - move motor right
+    DESC:   Move Stepper Motor, called by a timer to continiously move motor.
+    ARGS:   dir = 'no' or blank - do not move motor
+                  'lft' - move motor left
+                  'rgt' - move motor right
     RETURNS: nothing, update Moving global var with dir
     """
     global Moving
 
-    if dir != 'no':
+    if dir != 'no': # Need to figure out why I put this here !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         Moving = dir
 
     # check if moving, if not return, nothing to do.
@@ -347,7 +387,7 @@ def MoveMotor(dir='no'):
     newActual = 0.0
 
     if Moving == 'rgt':
-        newActual = ActualVal - motorMovedThisFar
+        newActual = ActualVal - MOTORMOVEDEACHSTEP
         if newActual >= 0.0 and newActual >= TargetVal:
             # ?????????????????????????????????????????
             # call stepper motor driver
@@ -357,7 +397,7 @@ def MoveMotor(dir='no'):
             Moving = "no"
 
     elif Moving == 'lft':
-        newActual = ActualVal + motorMovedThisFar
+        newActual = ActualVal + MOTORMOVEDEACHSTEP
         if newActual <= PARKLOCATION and newActual <= TargetVal:
             # ?????????????????????????????????????????
             # call stepper motor driver
@@ -463,7 +503,7 @@ class AutoStopApp(object):
                 img = JogImg[self.b]
             JogBtn[self.b] = Button(self.frame, image=img, text=formatJogValue(JOGVALUES[self.b]),
                                 compound=CENTER, fg='white', font=FontStd,
-                                command=self.cmd, relief=FLAT, bg=THEME)
+                                command=self.cmd, relief=FLAT, bg=THEME, activebackground=THEME, borderwidth=0)
             JogBtn[self.b].grid(row=7, column=self.b, rowspan=2)
 
         leftBtn = Button(self.frame, image=LeftImg, command=self.moveLeft, relief=FLAT, bg=THEME, activebackground=THEME, borderwidth=0)
